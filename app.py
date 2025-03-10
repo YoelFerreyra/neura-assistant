@@ -3,7 +3,6 @@ import ollama
 from flask import Flask, render_template, request, jsonify
 from gtts import gTTS
 from playsound import playsound
-import json
 import subprocess
 
 app = Flask(__name__)
@@ -19,8 +18,6 @@ def open_chrome(cmd=None):
     subprocess.run(["google-chrome"])
     return 'Se abrió Google Chrome correctamente'
 
-import subprocess
-
 def open_vscode(path=None):
     """ Abre Visual Studio Code en la ruta especificada, o en la ruta por defecto si no se especifica ninguna. """
     try:
@@ -28,42 +25,92 @@ def open_vscode(path=None):
             subprocess.run(["code", path], check=True)
         else:
             subprocess.run(["code"], check=True)
-        print("Se abrió Visual Studio Code.")
         return "Se abrió Visual Studio Code."
     except Exception as e:
-        print(f"Error al intentar abrir Visual Studio Code: {e}")
         return "Error al intentar abrir Visual Studio Code"
 
-
 def get_ollama_response(text):
-
-    messages = [{'role': 'user', 'content': text}]
+    messages = [
+        {"role": "system", "content": "Eres un asistente con un tono burlón y sarcástico"},
+        {"role": "user", "content": text}
+    ]
 
     response = ollama.chat(
-    'llama3.1',
-    messages=messages,
-    tools=[add_two_numbers, open_chrome, open_vscode])
+        'llama3.1',
+        messages=messages,
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "add_two_numbers",
+                    "description": "Add two numbers",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["a", "b"],
+                        "properties": {
+                            "a": {"type": "integer", "description": "The first integer number"},
+                            "b": {"type": "integer", "description": "The second integer number"}
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "open_chrome",
+                    "description": "Abre Google Chrome en la computadora.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cmd": {
+                                "type": "string",
+                                "description": "Comando opcional para abrir Chrome con una URL o argumento específico."
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "open_vscode",
+                    "description": "Abre Visual Studio Code en la computadora.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Ruta opcional de la carpeta o archivo a abrir en VS Code. Si no se proporciona, se abrirá VS Code en la ubicación predeterminada."
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    )
 
     available_functions = {
-    'add_two_numbers': add_two_numbers,
-    'open_chrome': open_chrome,
-    'open_vscode': open_vscode
+        'add_two_numbers': add_two_numbers,
+        'open_chrome': open_chrome,
+        'open_vscode': open_vscode
     }
     print(response)
 
-    # Si no hay llamadas a funciones, devolver el contenido del mensaje directamente
     if not response.message.tool_calls:
-        return response.message.content  # Devuelve el contenido del mensaje directamente
+        return response.message.content
 
     for tool in response.message.tool_calls or []:
         function_to_call = available_functions.get(tool.function.name)
-    if function_to_call:
-        response = function_to_call(**tool.function.arguments)
-        print(response)
-        return response
-    else:
-        return 'No se encontro la funcion'
 
+        if function_to_call:
+            return function_to_call(**tool.function.arguments)
+
+    fallback_response = ollama.chat(
+        'llama3.1',
+        messages=messages
+    )
+
+    return fallback_response.message.content
 
 @app.route("/")
 def index():
